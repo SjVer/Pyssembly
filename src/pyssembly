@@ -1,0 +1,70 @@
+#!/usr/bin/python3
+import sys, os
+import argparse
+from comp import Compiler, CompilationError
+from chunk import Chunk
+from vm import VM
+VERSION = "0.1.0"
+
+def repl():
+    compiler = Compiler()
+    vm = VM()
+    while True:
+        # os.system('cls' if os.name in ('nt', 'dos') else 'clear')
+        print("")
+        vm.displayInfo()
+        try:
+            cmd = input("> ")
+        except KeyboardInterrupt:
+            break
+        try:
+            compiler.code = cmd
+            compiler.chunk = Chunk()
+            chunk = compiler.compile()
+            print("------",compiler.lines())
+            vm.instructs = compiler.lines()
+            vm.interpret(chunk.bytes)
+        except CompilationError as e:
+            print(e)
+            # print("Error: Invalid command \""+cmd+"\"")
+        if vm.killed:
+            break
+
+def runfile(path: str, debug: bool):
+    if not os.path.exists(path):
+        print("File \""+path+"\" not found")
+        sys.exit(1)
+    code = ""
+    with open(path, 'r') as f:
+        code = f.read()
+    
+    compiler = Compiler()
+    compiler.code = code
+    compiler.chunk = Chunk()
+    VM().interpret(compiler.compile().bytes, debug=debug)
+    sys.exit(0)
+
+if __name__ == "__main__":
+
+    if '--version' in sys.argv:
+        print(f"Pyssembly version {VERSION} by Sjoerd Vermeulen")
+        sys.exit(0)
+
+    parser = argparse.ArgumentParser('pyssembly', description='python assembly/vm emulator',
+                                     usage='%(prog)s [file]\n -h/--help: show help message')
+    parser.add_argument('--file', '-f', dest="file", action="store",
+                        help='assembly file to run (with .asm extension)')
+    # parser.add_argument('-o', '--output', dest='file',
+    # action='store', help='specify the output file')
+    # parser.add_argument('-v', '--verbose', action='store_true',
+    #                     default=False, help='verbose compiling')
+    parser.add_argument('-d', '--debug', action='store_true', default=False,
+                        help="displays extra debugging information when running a file")
+    parser.add_argument('--version', action='store_true',
+                        help='print version info')
+
+    args = parser.parse_args()
+    if args.file:
+        runfile(args.file, args.debug)
+    else:
+        repl()
