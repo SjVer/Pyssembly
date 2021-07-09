@@ -12,7 +12,7 @@ def repl():
     while True:
         # os.system('cls' if os.name in ('nt', 'dos') else 'clear')
         print("")
-        vm.displayInfo()
+        vm.displayInfo(False)
         try:
             cmd = input("> ")
         except KeyboardInterrupt:
@@ -21,9 +21,10 @@ def repl():
             compiler.code = cmd
             compiler.chunk = Chunk()
             chunk = compiler.compile()
-            print("------",compiler.lines())
-            vm.instructs = compiler.lines()
+            
+            vm.instructs = compiler.instructs
             vm.interpret(chunk.bytes)
+            
         except CompilationError as e:
             print(e)
             # print("Error: Invalid command \""+cmd+"\"")
@@ -38,11 +39,20 @@ def runfile(path: str, debug: bool):
     with open(path, 'r') as f:
         code = f.read()
     
-    compiler = Compiler()
-    compiler.code = code
-    compiler.chunk = Chunk()
-    VM().interpret(compiler.compile().bytes, debug=debug)
-    sys.exit(0)
+    try:
+        compiler = Compiler()
+        compiler.code = code
+        compiler.chunk = Chunk()
+        chunk = compiler.compile()
+
+        vm = VM()
+        vm.configure(chunk.bytes, compiler.instructs)
+        vm.interpret(debug=debug)
+        sys.exit(0)
+
+    except CompilationError as e:
+        print(e)
+        sys.exit(1)
 
 if __name__ == "__main__":
 

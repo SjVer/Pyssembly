@@ -1,12 +1,27 @@
-LOAD 2
-PUSH
-; a=2 st=2
-CMP ; f=true
-CAIF 10
-NOI
-NOI
-NOI
-PRNT
-INC
-CMP ; f=false
-RET ; returns to line 5
+; print "Hello world!"
+LOAD 72 ; H
+PRNC
+LOAD 101 ; e
+PRNC
+LOAD 108 ; l
+PRNC
+PRNC
+LOAD 111 ; o
+PRNC
+LOAD 32 ; " "
+PRNC
+LOAD 119 ; w
+PRNC
+LOAD 111 ; o
+PRNC
+LOAD 114 ; r
+PRNC
+LOAD 108 ; l
+PRNC
+LOAD 100 ; d
+PRNC
+LOAD 33 ; !
+PRNC
+LOAD 10 ; \n
+PRNC
+KILL

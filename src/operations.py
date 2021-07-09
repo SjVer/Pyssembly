@@ -1,6 +1,6 @@
 def checkAddress(self, dest: int): return dest in range(len(self.bytes))
 
-def NOI(self): return
+def NOI(self): return None
 def PUSH(self): self.push()
 def POP(self): self.pop()
 def LOAD(self):
@@ -36,8 +36,8 @@ def INPT(self):
     try: value = float(inp)
     except ValueError: value = 0
     self.a = value
-def PRNT(self): print(self.a)
-def PRNC(self): print(chr(int(self.a)))
+def PRNT(self): return str(self.a)
+def PRNC(self): return chr(int(self.a))
 def CMP(self): self.f = self.a == self.stack[-1]
 def JMP(self):
     self.ic += 1
@@ -60,7 +60,7 @@ def CALL(self):
     if not checkAddress(self, dest):
         print("Call to address "+str(dest)+" failed")
     else:
-        self.r = self.ic + 1
+        self.r = self.ic
         self.ic = dest-2
 def CAIF(self):
     self.ic += 1
@@ -69,7 +69,7 @@ def CAIF(self):
     if not checkAddress(self, dest):
         print("Call to address "+str(dest)+" failed")
     else:
-        self.r = self.ic + 1
+        self.r = self.ic
         self.ic = dest-2
 def RET(self):
     dest = self.r
@@ -82,6 +82,7 @@ def DEC(self): self.a -= 1 if self.a > 0 else 0
 def KILL(self):
     self.stack = []
     self.a = 0
+    self.r = 0
     self.f = False
     self.killed = True
 

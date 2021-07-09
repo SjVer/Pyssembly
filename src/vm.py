@@ -10,7 +10,7 @@ class VM:
         
         self.killed = False
 
-        self.instructs: list = None
+        self.instructs: list[str] = None
 
         # stack
         self.stack = []
@@ -20,6 +20,10 @@ class VM:
         self.a: float = 0
         self.r: int = 0
         self.f: bool = False
+
+    def configure(self, cbytes, instructs):
+        self.bytes = cbytes
+        self.instructs = instructs
 
     @property
     def ip(self):
@@ -41,29 +45,26 @@ class VM:
         if len(self.stack) > 0:
             self.a = self.stack.pop()
        
-    def displayInfo(self):
-        print(self.instructs)
-        print("instruction:",self.ic+1, end='\r')
+    def displayInstruct(self):
+        print("instruction:",self.ic+1, end='')
         if self.instructs and self.instructs != []:
-            print(" "+self.instructs[self.ic])
+            print(" "+self.instructs[self.ic].split(';')[0].strip())
         else: print("")
         
+    def displayData(self):
         print("registers: a:"+str(self.a)+'  r:'+str(self.r+2 if self.r else 0)+'  f:'+str(self.f)+'')
         print("stack:",self.stack)
             
-    def interpret(self, chunk: list = None, debug: bool = False):
+    def interpret(self, debug: bool = False):
+        
         try:
-            self.bytes = chunk if chunk else self.bytes
-            
             if self.bytes == [] or not self.bytes:
                 raise ValueError("VM's bytes must be set first")
             
-            # if self.bytes[-1] != Instruct.KILL.value.byte:
-            #     self.bytes.append(Instruct.KILL.value.byte)
-                
             self.ic = 0
+            self.killed = False
             
-            while self.ip and not self.killed:
+            while self.ip != None and not self.killed:
                 try: funcname = '_'+str(self.ip.value)
                 except AttributeError: funcname = '_'+str(self.ip)
                 
@@ -72,10 +73,13 @@ class VM:
                 
                 if debug:
                     print("")
-                    self.displayInfo()
+                    self.displayInstruct()
                     
-                opfuncs[funcname](self)
+                output = opfuncs[funcname](self)
                 self.ic += 1
+
+                if debug: self.displayData()
+                if output: print(output, end="")
                 
         except KeyboardInterrupt:
             print("KeyboardInterupt")
