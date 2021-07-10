@@ -17,7 +17,6 @@ class Chunk:
         self.size += 1
         self.bytes.append(byte)
 
-
 class Ins:#truction
     def __init__(self, byte: cbyte, *args):
         self.byte = cbyte(byte)
@@ -46,6 +45,8 @@ class Instruct(Enum):
     RET  = Ins(17)
     INC  = Ins(18)
     DEC  = Ins(19)
+    PUSB = Ins(20, int)
+    GETB = Ins(21, int)
     KILL = Ins(66)
 
 def geninstructdict():

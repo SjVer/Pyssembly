@@ -1,3 +1,5 @@
+from ctypes import c_ubyte as cbyte
+
 def checkAddress(self, dest: int): return dest in range(len(self.bytes))
 
 def NOI(self): return None
@@ -79,12 +81,23 @@ def RET(self):
         self.ic = self.r
 def INC(self): self.a += 1
 def DEC(self): self.a -= 1 if self.a > 0 else 0
-def KILL(self):
-    self.stack = []
-    self.a = 0
-    self.r = 0
-    self.f = False
-    self.killed = True
+def PUSB(self):
+    self.ic += 1
+    dest = int(self.ip)
+    if not checkAddress(self, dest):
+        print("Push byte to address "+str(dest)+" failed")
+    else:
+        self.bytes[dest-1] = cbyte(int(self.a))
+def GETB(self):
+    self.ic += 1
+    dest = int(self.ip)
+    if not checkAddress(self, dest):
+        print("Get byte from address "+str(dest)+" failed")
+    else:
+        self.a = self.bytes[dest-1].value \
+            if isinstance(self.bytes[dest-1], cbyte)\
+            else self.bytes[dest-1]
+def KILL(self): self.killed = True
 
 
 opfuncs = {
@@ -108,5 +121,7 @@ opfuncs = {
     '_17': RET,
     '_18': INC,
     '_19': DEC,
+    '_20': PUSB,
+    '_21': GETB,
     '_66': KILL,
 }

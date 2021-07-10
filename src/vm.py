@@ -9,21 +9,19 @@ class VM:
         self.ic: int = 0
         
         self.killed = False
-
-        self.instructs: list[str] = None
+        self.output = ""
 
         # stack
         self.stack = []
-        self.max_stack_size = 256
+        self.max_stack_size = 255
 
         # register
         self.a: float = 0
         self.r: int = 0
         self.f: bool = False
 
-    def configure(self, cbytes, instructs):
+    def configure(self, cbytes):
         self.bytes = cbytes
-        self.instructs = instructs
 
     @property
     def ip(self):
@@ -32,6 +30,16 @@ class VM:
                 return None
             return self.bytes[self.ic]
         return None
+
+    @property
+    def instruct(self):
+        for op in Instruct:
+            # print(op.name, op.value.byte, self.ip)
+            if op.value.byte.value == self.ip.value:
+                return op.name
+        # if self.ip == Instruct.KILL.value.byte:
+            # return Instruct.KILL.name
+        return "NONE"
 
     def push(self):
         """pushes the value in the register onto the stack"""
@@ -46,15 +54,21 @@ class VM:
             self.a = self.stack.pop()
        
     def displayInstruct(self):
-        print("instruction:",self.ic+1, end='')
-        if self.instructs and self.instructs != []:
-            print(" "+self.instructs[self.ic].split(';')[0].strip())
+        print("instruction:",self.ic+1, end=' ')
+        if self.instruct or True:
+            print(self.instruct)
         else: print("")
         
     def displayData(self):
         print("registers: a:"+str(self.a)+'  r:'+str(self.r+2 if self.r else 0)+'  f:'+str(self.f)+'')
-        print("stack:",self.stack)
-            
+        print("stack:",self.stack,"("+str(len(self.stack))+' items)')
+    
+    def printResult(self, debug=False):
+        if self.output:
+            print(self.output.strip('\n')+'\n')
+        elif debug:
+            print("")
+        
     def interpret(self, debug: bool = False):
         
         try:
@@ -72,14 +86,20 @@ class VM:
                     raise RuntimeError(f"Invalid operation \"{funcname}\"")
                 
                 if debug:
-                    print("")
+                    # print("")
                     self.displayInstruct()
                     
-                output = opfuncs[funcname](self)
+                self.output = opfuncs[funcname](self)
                 self.ic += 1
 
                 if debug: self.displayData()
-                if output: print(output, end="")
+                self.printResult(debug)
+            
+            if not self.killed:
+                while True: pass
+            elif debug: print("KILLED")
+            # else:
+                # self.displayInstruct()
                 
         except KeyboardInterrupt:
             print("KeyboardInterupt")

@@ -3,16 +3,17 @@ import sys, os
 import argparse
 from comp import Compiler, CompilationError
 from chunk import Chunk
+from fileio import readBinary, writeBinary
 from vm import VM
 VERSION = "0.1.0"
 
 def repl():
     compiler = Compiler()
     vm = VM()
+    # vm.displayInstruct()
+    vm.displayData()
     while True:
         # os.system('cls' if os.name in ('nt', 'dos') else 'clear')
-        print("")
-        vm.displayInfo(False)
         try:
             cmd = input("> ")
         except KeyboardInterrupt:
@@ -22,8 +23,9 @@ def repl():
             compiler.chunk = Chunk()
             chunk = compiler.compile()
             
-            vm.instructs = compiler.instructs
-            vm.interpret(chunk.bytes)
+            vm.configure(chunk.bytes)
+            vm.interpret()
+            vm.displayData()
             
         except CompilationError as e:
             print(e)
@@ -31,7 +33,7 @@ def repl():
         if vm.killed:
             break
 
-def runfile(path: str, debug: bool):
+def runasmfile(path: str, debug: bool):
     if not os.path.exists(path):
         print("File \""+path+"\" not found")
         sys.exit(1)
@@ -44,10 +46,37 @@ def runfile(path: str, debug: bool):
         compiler.code = code
         compiler.chunk = Chunk()
         chunk = compiler.compile()
-
+        
         vm = VM()
-        vm.configure(chunk.bytes, compiler.instructs)
+        vm.configure(chunk.bytes)
         vm.interpret(debug=debug)
+        sys.exit(0)
+
+    except CompilationError as e:
+        print(e)
+        sys.exit(1)
+
+def runbinfile(path: str, debug: bool):
+    cbytes = readBinary(path)
+    vm = VM()
+    vm.configure(cbytes)
+    vm.interpret(debug=debug)
+    sys.exit(0)
+
+def compilebinfile(inpath: str, outpath: str, debug: bool):
+    if not os.path.exists(inpath):
+        print("File \""+inpath+"\" not found")
+        sys.exit(1)
+    code = ""
+    with open(inpath, 'r') as f:
+        code = f.read()
+
+    try:
+        compiler = Compiler()
+        compiler.code = code
+        compiler.chunk = Chunk()
+        chunk = compiler.compile()
+        writeBinary(outpath, chunk.bytes)
         sys.exit(0)
 
     except CompilationError as e:
@@ -63,11 +92,15 @@ if __name__ == "__main__":
     parser = argparse.ArgumentParser('pyssembly', description='python assembly/vm emulator',
                                      usage='%(prog)s [file]\n -h/--help: show help message')
     parser.add_argument('--file', '-f', dest="file", action="store",
-                        help='assembly file to run (with .asm extension)')
+                        help='assembly file to run')
     # parser.add_argument('-o', '--output', dest='file',
     # action='store', help='specify the output file')
     # parser.add_argument('-v', '--verbose', action='store_true',
     #                     default=False, help='verbose compiling')
+    parser.add_argument('-c', '--compile', dest="outfile", action="store",
+                        help="compile an assembly file to binary")
+    parser.add_argument('-b', '--binary', dest="binfile", action="store",
+                        help="execute a binary file")
     parser.add_argument('-d', '--debug', action='store_true', default=False,
                         help="displays extra debugging information when running a file")
     parser.add_argument('--version', action='store_true',
@@ -75,6 +108,11 @@ if __name__ == "__main__":
 
     args = parser.parse_args()
     if args.file:
-        runfile(args.file, args.debug)
+        if args.binfile: print("Error: Assembly and binary files given"); exit(1)
+        if args.outfile: compilebinfile(args.file, args.outfile, args.debug)
+        else: runasmfile(args.file, args.debug)
+    elif args.binfile:
+        if args.file: print("Error: Assembly and binary files given"); exit(1)
+        runbinfile(args.binfile, args.debug)
     else:
-        repl()
+        repl(args.debug)
