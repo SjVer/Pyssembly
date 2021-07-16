@@ -2,68 +2,34 @@
 import sys, os
 import argparse
 from comp import Compiler, CompilationError
-from chunk import Chunk
-from fileio import readBinary, writeBinary
 from vm import VM
 VERSION = "0.1.0"
 
-def repl():
-    compiler = Compiler()
-    vm = VM()
-    # vm.displayInstruct()
-    vm.displayData()
-    while True:
-        # os.system('cls' if os.name in ('nt', 'dos') else 'clear')
-        try:
-            cmd = input("> ")
-        except KeyboardInterrupt:
-            break
-        try:
-            compiler.code = cmd
-            compiler.chunk = Chunk()
-            chunk = compiler.compile()
-            
-            vm.configure(chunk.bytes)
-            vm.interpret()
-            vm.displayData()
-            
-        except CompilationError as e:
-            print(e)
-            # print("Error: Invalid command \""+cmd+"\"")
-        if vm.killed:
-            break
-
-def runasmfile(path: str, debug: bool):
-    if not os.path.exists(path):
-        print("File \""+path+"\" not found")
-        sys.exit(1)
-    code = ""
-    with open(path, 'r') as f:
-        code = f.read()
+def check_dir(dir_path: str):
+    # check if dir is formatted correctly
+    if not os.path.isdir(dir_path):
+        return False
     
-    try:
-        compiler = Compiler()
-        compiler.code = code
-        compiler.chunk = Chunk()
-        chunk = compiler.compile()
+    must_files = []
+    must_files.append(os.path.join(dir_path, 'boot', 'kernel.bin'))
+    must_files.append(os.path.join(dir_path, 'boot', 'kernel-pool.bin'))
+
+    for file in must_files:
+        if not os.path.isfile(file):
+            return False
         
-        vm = VM()
-        vm.configure(chunk.bytes)
-        vm.interpret(debug=debug)
-        sys.exit(0)
+    return True
 
-    except CompilationError as e:
-        print(e)
+def run_in_dir(dir_path: str, debug: bool, slow: bool):
+    if not check_dir(dir_path):
+        print("pyssembly: error: non-existend or invalid root directory",dir_path)
         sys.exit(1)
-
-def runbinfile(path: str, debug: bool):
-    cbytes = readBinary(path)
+    
     vm = VM()
-    vm.configure(cbytes)
-    vm.interpret(debug=debug)
-    sys.exit(0)
+    vm.configure(dir_path, debug, slow)
+    vm.run()
 
-def compilebinfile(inpath: str, outpath: str, debug: bool):
+def compile_asm(inpath: str, outdir: str, debug: bool):
     if not os.path.exists(inpath):
         print("File \""+inpath+"\" not found")
         sys.exit(1)
@@ -71,18 +37,25 @@ def compilebinfile(inpath: str, outpath: str, debug: bool):
     with open(inpath, 'r') as f:
         code = f.read()
 
+    if not outdir:
+        outdir = os.path.splitext(os.path.basename(args.input))[0]
+    
+    if not os.path.isdir(outdir):
+        os.mkdir(outdir)
+
+    binpath = os.path.join(outdir, 'boot', 'kernel.bin')
+    poolpath = os.path.join(outdir, 'boot', 'kernel-pool.bin')
+
     try:
-        compiler = Compiler()
+        compiler = Compiler(binpath, poolpath)
         compiler.code = code
-        compiler.chunk = Chunk()
-        chunk = compiler.compile()
-        writeBinary(outpath, chunk.bytes)
+        compiler.compile()
         sys.exit(0)
 
     except CompilationError as e:
         print(e)
         sys.exit(1)
-
+ 
 if __name__ == "__main__":
 
     if '--version' in sys.argv:
@@ -91,28 +64,27 @@ if __name__ == "__main__":
 
     parser = argparse.ArgumentParser('pyssembly', description='python assembly/vm emulator',
                                      usage='%(prog)s [file]\n -h/--help: show help message')
-    parser.add_argument('--file', '-f', dest="file", action="store",
-                        help='assembly file to run')
-    # parser.add_argument('-o', '--output', dest='file',
-    # action='store', help='specify the output file')
-    # parser.add_argument('-v', '--verbose', action='store_true',
-    #                     default=False, help='verbose compiling')
-    parser.add_argument('-c', '--compile', dest="outfile", action="store",
+    parser.add_argument('-r', '--rootdir', type=str, default=os.getcwd(), required=False,
+                        help='root directory for the vm')
+    parser.add_argument('-o', '--output', dest='outfile', default=False,
+    action='store', help='specify the output file')
+    parser.add_argument('-s', '--slow', action='store_true',
+                        default=False, help='slow mode')
+    parser.add_argument('-c', '--compile', dest="input", action="store", default=False,
                         help="compile an assembly file to binary")
-    parser.add_argument('-b', '--binary', dest="binfile", action="store",
-                        help="execute a binary file")
+    # parser.add_argument('-b', '--binary', dest="binfile", action="store",
+    #                     help="execute a binary file")
     parser.add_argument('-d', '--debug', action='store_true', default=False,
                         help="displays extra debugging information when running a file")
     parser.add_argument('--version', action='store_true',
                         help='print version info')
 
     args = parser.parse_args()
-    if args.file:
-        if args.binfile: print("Error: Assembly and binary files given"); exit(1)
-        if args.outfile: compilebinfile(args.file, args.outfile, args.debug)
-        else: runasmfile(args.file, args.debug)
-    elif args.binfile:
-        if args.file: print("Error: Assembly and binary files given"); exit(1)
-        runbinfile(args.binfile, args.debug)
+
+    if args.input:
+        # compile
+        compile_asm(args.input, args.outfile, args.debug)
+    
     else:
-        repl(args.debug)
+        # run
+        run_in_dir(args.rootdir, args.debug, args.slow)
