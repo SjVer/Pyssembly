@@ -1,29 +1,12 @@
 from typing import Any, Dict, List
+import typing
 from instructions import Instruct
-from bitsnbytes import Byte #, split_bits, int_to_bits, float_to_IEEE754
+from bitsnbytes import Byte, bits_to_int, int_to_bits #, split_bits, int_to_bits, float_to_IEEE754
 # from hashtable import HashTable
 import pickle, os
 from copy import deepcopy
-
-# class BinaryWriter:
-#     def __init__(self, path: str):
-#         self.file = open(path, 'wb')
-#     def write(self, byte: Byte):
-#         # print('writing',byte.to_int(), bytearray([byte.to_int()]))
-#         self.file.write(bytearray([byte.to_int()]))
-#     def writelist(self, bytelist: List[Byte]):
-#         for byte in bytelist:
-#             self.write(byte)
-#     def finish(self):
-#         self.file.close()
-
-# class PickleWriter:
-#     def __init__(self, path: str):
-#         self.file = path #open(path, 'wb')
-#     def write(self, obj):
-#         pickle.dump(self.path, obj)
-#     def finish(self):
-#         pass
+from time import sleep
+from PIL import Image
 
 class CompilationError(Exception):
     def __init__(self, msg=None):
@@ -34,7 +17,7 @@ class CompilationError(Exception):
         super().__init__(msg)
 
 class Compiler:
-    def __init__(self, binpath: str, poolpath: str):
+    def __init__(self, binpath: str, poolpath: str, ptr_poolpath: str, op_binpath: str):
         self.code: str = ""
         self.instructs: list[str] = []
         self.bytecode = []
@@ -43,12 +26,16 @@ class Compiler:
         self.consts = {}
         self.vars = {}
         self.pool: Dict[int:Any] = {}
+        self.ptr_pool: Dict[int:list] = {}
         
         self.address_offset = 0
         # self.hashtable = HashTable()
+        # self.instructs_dict: Dict[int:str] = {}
         
         self.bytecode_bin_path = binpath
         self.pool_bin_path = poolpath
+        self.ptr_pool_bin_path = ptr_poolpath
+        self.instructs_bin_path = op_binpath
 
     def getInstruct(self, text: str):
         for instruct in Instruct:
@@ -58,53 +45,96 @@ class Compiler:
                 return instruct
         return False
 
-    def generate_key(self, value):
-        for key in self.pool:
-            if self.pool[key] == value:
-                return key
-        return len(self.pool) + 1
+    def generate_key(self, value: Any, ptr: bool = False):
+        if ptr:
+            for key in self.ptr_pool:
+                if self.ptr_pool[key] == value:
+                    return key
+            return len(self.ptr_pool) + 1
+        else:
+            for key in self.pool:
+                if self.pool[key] == value:
+                    return key
+            return len(self.pool) + 1
+        
+    def add_to_pool(self, value, ptr: bool = False):
+        key = self.generate_key(value, ptr)
+        if ptr:
+            pkey = self.generate_key(key)
+            self.pool[pkey] = key
+            self.ptr_pool[key] = value
+            return pkey
+        else:
+            self.pool[key] = value
+            return key
 
     def handlearg(self, arg: str, argtype: type, offset_s: bool, can_be_var: bool = True):
-        # print('handling arg',arg,'supposedly of type',argtype.__name__,end='')
+        # print(); print(arg, argtype, offset_s, can_be_var)
+        # print('handling arg',arg,'supposedly of type',argtype,end='')
 
+        isconst = False
         if arg in self.consts:
             arg = self.consts[arg][0]
+            isconst = True
 
         if arg in self.vars:
             argtype = id
 
-        # print(' but now of type',argtype.__name__)
+        # print(' but now of type',argtype)
 
         try:
             if argtype == float:
                 value = float(arg)
-                if offset_s:
+                if offset_s and not isconst:
                     value += self.address_offset
                 
-                key = self.generate_key(value)
-                self.pool[key] = value
+                key = self.add_to_pool(value)
                 return Byte(key)
             
             elif argtype == int:
                 value = int(arg)
-                if offset_s:
+                if offset_s and not isconst:
                     value += self.address_offset
                 
-                key = self.generate_key(value)
-                self.pool[key] = value
+                key = self.add_to_pool(value)
                 return Byte(key)
             
             elif argtype == id:
                 # variable
                 value = str(arg)
                 self.vars[value] = 0 # dummy value
-                key = self.generate_key(value)
-                self.pool[key] = value
+                key = self.add_to_pool(value)
+                return Byte(key)
+            
+            elif argtype == list and arg[0] == '{':
+                # list
+                inlist = arg[1:-1].split(',')
+                vlist = list()
+                for item in inlist:
+                    if not item.isnumeric(): raise ValueError
+                    vlist.append(int(item) + (self.address_offset if offset_s else 0))
+                
+                key = self.add_to_pool(vlist, True)
                 return Byte(key)
 
-        except ValueError:
+            elif argtype == list or argtype == str:
+                # string
+                if not arg.isascii():
+                    print('string contains non-ascii characters')
+                    raise ValueError
+
+                charlist = [ord(char) for char in list(arg)]
+
+                key = self.add_to_pool(charlist, True)
+                return Byte(key)
+
+            else:
+                print('unimplemented type',argtype)
+                raise ValueError
+
+        except ValueError as e:
             raise CompilationError("Invalid argument "+str(arg)+' (needs to be of type '+\
-                str(argtype.__name__)+', not of type '+str(type(arg).__name__)+')')
+                str(argtype.__name__)+')')#, not of type '+str(type(arg).__name__)+')')
 
     def expandMacro(self, macro: str):
         name = macro.split(':')[0]
@@ -126,11 +156,10 @@ class Compiler:
 
     def write_binaries(self):
 
-        if not os.path.exists(os.path.dirname(self.bytecode_bin_path)):
-            os.makedirs(os.path.dirname(self.bytecode_bin_path))
-
-        if not os.path.exists(os.path.dirname(self.pool_bin_path)):
-            os.makedirs(os.path.dirname(self.pool_bin_path))
+        for f in [self.bytecode_bin_path, self.pool_bin_path,
+            self.ptr_pool_bin_path, self.instructs_bin_path]:
+            if not os.path.exists(os.path.dirname(f)):
+                os.makedirs(os.path.dirname(f))
 
         with open(self.bytecode_bin_path, 'wb') as f:
             # bytearr = bytearray()
@@ -138,8 +167,16 @@ class Compiler:
         
         with open(self.pool_bin_path, 'wb') as f:
             pickle.dump(self.pool, f)
+        with open(self.ptr_pool_bin_path, 'wb') as f:
+            pickle.dump(self.ptr_pool, f)
+        with open(self.instructs_bin_path, 'wb') as f:
+            opdict = {}
+            for op in Instruct:
+                opdict[op.value.byte.to_int()] = op.name
+            pickle.dump(opdict, f)
 
     def compile(self, lines=None, do_format: bool = True):
+        
         try:
             self.bytecode = []
             
@@ -155,7 +192,7 @@ class Compiler:
                 line = line.split(';')[0].strip()
                 if not line: continue
                 
-                if "'" in line:
+                while "'" in line:
                     # expect a char
                     try:
                         char = line.split("'")[1]
@@ -247,13 +284,49 @@ class Compiler:
                 opargs = instruct.value.args
                 offs_s = instruct.value.offset_sensitive
                 if opargc > 0:
-                    args = line.split(' ')[1:]
+                    
+                    # get args
+                    args = list()
+                    part = None
+                    i = 0
+                    parts = line.split(' ')[1:]
+                    while i < len(parts) and parts:
+                        part = parts[i]
+
+                        # str
+                        if part[0] == '"':
+                            text = str()
+                            # text = part[1:] if part[-1] != '"' else part[1:-1]
+                            # i += 1
+                            # part = parts[i]
+                            while part[-1] != '"':
+                                text += ' ' + part
+                                i += 1
+                                part = parts[i]
+                            part = text + ' ' + part
+                            part = part.strip().strip('"')
+                        
+                        # arr
+                        elif part[0] == '{':
+                            text = str()
+                            # i += 1
+                            # part = parts[i]
+                            while part[-1] != '}':
+                                text += part
+                                i += 1
+                                part = parts[i]
+                            part = text + part
+
+                        args.append(part)
+                        i += 1
                 
+                    # print(args)
+
                     if len(args) != opargc:
                         raise CompilationError(
                             "Invalid amount of arguments at instruction "+\
                                 self.instructs[-1] + " (expected "+\
-                                str(opargc)+')')
+                                str(opargc)+' but got '+str(len(args))+')')
                         
                     for arg, arc in zip(args, range(opargc)):
                         # if returninstructs: instructs.append(arg)
@@ -262,6 +335,9 @@ class Compiler:
                         
                         # print('\n\n',arg, opargs[arc], offs_s)
                         self.bytecode.append(self.handlearg(arg, opargs[arc], offs_s))
+
+
+            if do_format: print('compiled prgm: '+' '.join([str(x.to_int()) for x in self.bytecode]))
 
             if do_format:
                 self.format_bytecode()
@@ -301,3 +377,28 @@ class Compiler:
             newbytes.append(byte)
 
         self.bytecode = newbytes
+
+    @staticmethod
+    def compile_image(input_image: str, output_file: str):
+        if not os.path.isfile(input_image):
+            raise CompilationError('file '+str(input_image)+' not found')
+        eightbit_list = list(Image.open(input_image).getdata())
+        
+        # convert to 8bit
+        for i in range(len(eightbit_list)):
+
+            nr = int_to_bits(eightbit_list[i][0] * 7 / 255, length=3)
+            ng = int_to_bits(eightbit_list[i][1] * 7 / 255, length=3)
+            nb = int_to_bits(eightbit_list[i][2] * 3 / 255, length=2)
+
+            newval = bits_to_int(nr + ng + nb)
+            eightbit_list[i] = newval
+        
+        # insert with and height in begin (only one byte cuz max dimensions are 128x128 anyway)
+        w, h = Image.open(input_image).size
+        eightbit_list.insert(0, h)
+        eightbit_list.insert(0, w)
+
+        bytearr = bytearray(eightbit_list)
+        with open(output_file, 'wb') as f:
+            f.write(bytearr)

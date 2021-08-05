@@ -1,7 +1,7 @@
 #offset 32800
 
-#const i VIDEO: -32799
-#const i PIXEL_START: 3; -8198
+#const i VIDEO: 1
+#const i PIXEL_START: 3
 
 LOAD 1
 PUSB VIDEO  ; turn on display by setting the second

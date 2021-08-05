@@ -1,4 +1,4 @@
-#offset 8200
+#offset 32800
 
 LOAD 'z' ; "z" ASCII code
 PUSH ; use it later to determin
@@ -9,7 +9,7 @@ LOAD 'a' ; "a" ASCII code
 ; loop:
 PRNC ; print char
 CMP ; check if char is "z"
-JMIF 11 ; jump if true
+JMIF 12 ; jump if true
 INC ; increment char to next
 JMP 5; not true so loop again
 

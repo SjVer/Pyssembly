@@ -1,11 +1,11 @@
 .PHONY: test
-test:
-	@python3 src/pyssembly -c $(file) -o ./bin
+test: prepare
+	@#spython3 src/pyssembly -c $(file) -o ./bin
 	@python3 src/pyssembly -r ./bin #$(notdir $(basename $(file)))
 
 .PHONY: test-debug
-test-debug:
-	@python3 src/pyssembly -c $(file) -o ./bin -d
+test-debug: prepare
+	@#python3 src/pyssembly -c $(file) -o ./bin -d
 	@python3 src/pyssembly -r ./bin -d -s #$(notdir $(basename $(file))) -d -s
 
 clean:
@@ -24,3 +24,8 @@ profile-vm:
 	@kernprof -l src/vm.py
 	@python3 -m line_profiler vm.py.lprof
 	@rm vm.py.lprof
+
+.PHONY: prepare
+prepare:
+	@python3 src/pyssembly -c $(file) -o ./bin
+	@cp -r include/* bin/
