@@ -261,50 +261,56 @@ class Ins:#truction
 
 sln = ln()+3
 class Instruct(Enum):
-    NOI     = Ins(ln(sln-1),   False)
+    # @property
+    def l(self, offset):
+        return sln+offset
+
+    NOI     = Ins(l(-1),  False)
     # stack
-    PUSH    = Ins(ln(sln+0),   False)
-    POP     = Ins(ln(sln+0),   False)
-    LOAD    = Ins(ln(sln+0),   False, float)
-    LODA    = Ins(ln(sln+0),   False, list)
+    PUSH    = Ins(l(0),   False)
+    POP     = Ins(l(0),   False)
+    LOAD    = Ins(l(0),   False, float)
+    LODA    = Ins(l(0),   False, list)
     # arithmetic
-    ADD     = Ins(ln(sln+1),   False)
-    SUB     = Ins(ln(sln+1),   False)
-    MUL     = Ins(ln(sln+1),   False)
-    DIV     = Ins(ln(sln+1),   False)
-    NEG     = Ins(ln(sln+1),   False)
+    ADD     = Ins(l(1),   False)
+    SUB     = Ins(l(1),   False)
+    MUL     = Ins(l(1),   False)
+    DIV     = Ins(l(1),   False)
+    NEG     = Ins(l(1),   False)
     # io
-    INPT    = Ins(ln(sln+2),   False)
-    PRNT    = Ins(ln(sln+2),   False)
-    PRNC    = Ins(ln(sln+2),   False)
-    PRNS    = Ins(ln(sln+2),   False)
-    PRNA    = Ins(ln(sln+2),   False)
+    INPT    = Ins(l(2),   False)
+    PRNT    = Ins(l(2),   False)
+    PRNC    = Ins(l(2),   False)
+    PRNS    = Ins(l(2),   False)
+    PRNA    = Ins(l(2),   False)
     # control flow
-    CMP     = Ins(ln(sln+3),   False)
-    JMP     = Ins(ln(sln+3),   True,  int)
-    JMIF    = Ins(ln(sln+3),   True,  int)
-    JIFN    = Ins(ln(sln+3),   True,  int)
-    CALL    = Ins(ln(sln+3),   True,  int)
-    CAIF    = Ins(ln(sln+3),   True,  int)
-    CIFN    = Ins(ln(sln+3),   True,  int)
-    RET     = Ins(ln(sln+3),   False)
+    CMP     = Ins(l(3),   False)
+    JMP     = Ins(l(3),   True,  int)
+    JMIF    = Ins(l(3),   True,  int)
+    JIFN    = Ins(l(3),   True,  int)
+    CALL    = Ins(l(3),   True,  int)
+    CAIF    = Ins(l(3),   True,  int)
+    CIFN    = Ins(l(3),   True,  int)
+    RET     = Ins(l(3),   False)
     # register manipulation
-    INC     = Ins(ln(sln+4),   False)
-    DEC     = Ins(ln(sln+4),   False)
+    INC     = Ins(l(4),   False)
+    DEC     = Ins(l(4),   False)
     # byte manipulation
-    PUSB    = Ins(ln(sln+5),   True,  int)
-    GETB    = Ins(ln(sln+5),   True,  int)
+    PUSB    = Ins(l(5),   True,  int)
+    GETB    = Ins(l(5),   True,  int)
     # variable
-    NVAR    = Ins(ln(sln+6),   False, id)
-    DVAR    = Ins(ln(sln+6),   False, id)
-    PUVA    = Ins(ln(sln+6),   False, id)
-    LOVA    = Ins(ln(sln+6),   False, id)
-    INCV    = Ins(ln(sln+6),   False, id)
-    DECV    = Ins(ln(sln+6),   False, id)
+    NVAR    = Ins(l(6),   False, id)
+    DVAR    = Ins(l(6),   False, id)
+    PUVA    = Ins(l(6),   False, id)
+    LOVA    = Ins(l(6),   False, id)
+    INCV    = Ins(l(6),   False, id)
+    DECV    = Ins(l(6),   False, id)
+    # file io
+    OPEF    = Ins(l(7))
     # misc.
-    WAIT    = Ins(ln(sln+7),   False, float)
-    POLL    = Ins(ln(sln+7),   False)
-    KILL    = Ins(ln(sln+7),   False)
+    WAIT    = Ins(l(9),   False, float)
+    POLL    = Ins(l(9),   False)
+    KILL    = Ins(l(9),   False)
 
 def getinstruct(byteval: int):
     for instruct in Instruct:
