@@ -18,26 +18,6 @@ import pygame as pg
 # 3 - 4098 : pixels of display (64 * 64) indexed per row
 # 4099 : start of program
 
-
-def drawpixel(self, r, y, width, height, m3, m2):
-	for x in r:
-		if not self.video_changes_buffer.get((x, y)):
-
-			bits = self.getpixel(x, y).to_list()
-
-			# byte: rrrgggbb
-			rgb = (
-				bits_to_int(bits[:3]) * m3,
-				bits_to_int(bits[3:6]) * m3,
-				bits_to_int(bits[6:8]) * m2,
-			)
-			# add 1 to width and height to avoid black lines
-			pg.draw.rect(self.display, rgb, (x*width, y *
-											 height, width + 1, height + 1))
-
-			self.video_changes_buffer[(x, y)] = True
-
-
 class VM:
 	def __init__(self):
 
@@ -48,6 +28,7 @@ class VM:
 		self.bytes: list = None
 		self.pool: Dict[int:Any] = dict()
 		self.ptr_pool: Dict[int:list] = dict()
+		self.file_pool: Dict[int:'file'] = dict()
 		self.ic: int = 0
 
 		# flags
@@ -56,9 +37,9 @@ class VM:
 
 		# stack
 		self.stack = []
-		self.MAX_STACK_SIZE = 20
+		self.MAX_STACK_SIZE = 255**2
 		self.ret_stack: List[int] = []
-		self.MAX_RET_STACK_SIZE = 20
+		self.MAX_RET_STACK_SIZE = 255
 
 		# registers
 		self.a: float = 0
@@ -72,10 +53,9 @@ class VM:
 
 		# display
 		self.display: pg.Surface = None
-		# pixels of prevous frame (key: tuple of x and y, value: bool if same as previous frame)
-		self.video_changes_buffer = {}
-		# self.video_pixels_buffer = {} # last drawn pixels (key: tuple of x and y, value: rgb tuple)
+		self.video_changes_buffer: List[tuple] = []
 		self.buffer_display: pg.Surface = None
+		self.pgclock = pg.time.Clock()
 
 		# CONSTANTS
 		self.ISALIVE_BYTE = 0
@@ -118,7 +98,6 @@ class VM:
 	def display_on(self) -> bool:
 		return bool(self.bytes[1])
 
-	# @profile
 	def poll(self) -> None:
 
 		# poll display
@@ -149,6 +128,11 @@ class VM:
 				# print("\nKILLED")
 			# sys.exit()
 
+	# FILE STUFF
+	def translate_filename(self, filename) -> str:
+		*dirs, basename = filename.split('\\')
+		return os.path.join(self.rootdir, *dirs, basename)
+
 	# DISPLAY STUFF
 
 	def getpixel(self, row: int, column: int) -> Byte:
@@ -157,11 +141,12 @@ class VM:
 	def setpixel(self, row: int, column: int, byte: Byte) -> None:
 		# print(row, column, self.PIXELS_START + row*64+column, len(self.bytes), self.PIXELS_START + 64*64)
 		self.bytes[self.PIXELS_START + column*self.DISPLAY_SIZE + row] = byte
-		self.video_changes_buffer[(row, column)] = False
+		# self.video_changes_buffer[(row, column)] = False
+		self.video_changes_buffer.append((row, column))
 
 	def prunepixel(self, row: int, column: int) -> None:
-		self.video_changes_buffer[(column, row)] = False
-		# print('pixel ('+str(row)+','+str(column)+') pruned ('+str(self.PIXELS_START+column*64+row)+')')
+		# self.video_changes_buffer[(column, row)] = False
+		self.video_changes_buffer.append((column, row))
 
 	def address_to_pixel(self, address: int) -> tuple:
 		if address in range(self.PIXELS_START,
@@ -183,68 +168,31 @@ class VM:
 			(self.DISPLAY_SIZE, self.DISPLAY_SIZE))
 		pg.display.set_caption("Pyssembly VM")
 
-	def updatedisplay_threaded(self):
-		width, height = self.display.get_size()
-		width /= self.DISPLAY_SIZE
-		height /= self.DISPLAY_SIZE
-
-		r = range(self.DISPLAY_SIZE)
-		m3 = 225/7
-		m2 = 225/3
-
-		threads = []
-		for y in r:
-			thread = threading.Thread(target=drawpixel, args=(
-				self, r, y, width, height, m3, m2))
-			threads.append(thread)
-			threads[y].start()
-
-		for thread in threads:
-			thread.join()
-
-		pg.display.flip()
-
-	# @profile
 	def updatedisplay(self):
-		# width, height = self.display.get_size()
-		# width /= self.DISPLAY_SIZE; height /= self.DISPLAY_SIZE
-
-		r = range(self.DISPLAY_SIZE)
 		m3 = 225/7
 		m2 = 225/3
-
 		hasdrawn = False
-		# firstpixel = None
-		# lastpixel = None
 
-		for y in r:
-			for x in r:
+		for x, y in self.video_changes_buffer:
 
-				# if (x, y) in self.video_changes_buffer and self.video_changes_buffer[(x, y)]:
-				if not self.video_changes_buffer.get((x, y)):
+			if not hasdrawn:
+				hasdrawn = True
+				# firstpixel = (x*width, y*width)
+				firstpixel = (x, y)
 
-					if not hasdrawn:
-						hasdrawn = True
-						# firstpixel = (x*width, y*width)
-						firstpixel = (x, y)
+			bits = self.getpixel(x, y).to_list()
+			# bits = [int(x) for x in str(self.getpixel(x, y))]
 
-					bits = self.getpixel(x, y).to_list()
+			# byte: rrrgggbb
+			rgb = (
+				bits_to_int(bits[:3]) * m3,
+				bits_to_int(bits[3:6]) * m3,
+				bits_to_int(bits[6:8]) * m2,
+			)
+			self.buffer_display.set_at((x, y), rgb)
 
-					# byte: rrrgggbb
-					rgb = (
-						bits_to_int(bits[:3]) * m3,
-						bits_to_int(bits[3:6]) * m3,
-						bits_to_int(bits[6:8]) * m2,
-					)
-					# add 1 to width and height to avoid black lines
-					# pg.draw.rect(self.display, rgb, (x*width, y*height, width + 1, height + 1))
-					self.buffer_display.set_at((x, y), rgb)
-					# self.display.
-					# print('drawing',rgb,'to',(x,y))
-
-					self.video_changes_buffer[(x, y)] = True
-					# lastpixel = (x*width+width+1, y*height+height+1)
-					lastpixel = (x+1, y+1)
+			self.video_changes_buffer.remove((x, y))
+			lastpixel = (x+1, y+1)
 
 		if hasdrawn:
 			m1 = self.display.get_width() / self.DISPLAY_SIZE
@@ -254,11 +202,15 @@ class VM:
 			self.display.blit(
 				pg.transform.scale(self.buffer_display, self.display.get_size()), (0, 0))
 			pg.display.update(rect)
-			# print('update')
+			
 		# pg.display.flip()
 
 	def resetdisplay(self):
-		self.video_changes_buffer = {}
+		self.display.fill((0,0,0))
+		self.display.blit(
+			pg.transform.scale(self.buffer_display, self.display.get_size()), (0, 0))
+		pg.display.update()
+		self.video_changes_buffer = []
 
 	def enddisplay(self):
 		self.display = None
@@ -293,16 +245,17 @@ class VM:
 
 	# STACK STUFF
 
-	def push(self):
+	def push(self, value = 0, doreturn: bool = False):
 		"""pushes the value in the register onto the stack"""
 		if len(self.stack)+1 > self.MAX_STACK_SIZE:
 			print("Error: Stack overflow, push failed")
 		else:
-			self.stack.append(self.a)
+			self.stack.append(self.a if not doreturn else value)
 
-	def pop(self):
+	def pop(self, doreturn: bool = False):
 		"""pops a value off the stack and puts it in the register"""
 		if len(self.stack) > 0:
+			if doreturn: return self.stack.pop()
 			self.a = self.stack.pop()
 
 	def push_ret(self, dest: int):
@@ -343,10 +296,14 @@ class VM:
 										   #   f'{self.r if self.r else 0:04}', int(self.f)]]))
 										   int(self.f)]]))
 
-		print("│ call stack: {"+', '.join(str(x) for x in self.ret_stack)+'} (' +
+		print("│ call stack: {"+', '.join(str(x) for x in formatlist_items(self.ret_stack, 10))+'} (' +
 			  str(len(self.ret_stack))+f' item{"s" if len(self.ret_stack) != 1 else ""})')
+
+
 		# {0000, 0000, 0000} (0 items)
-		print("└ stack: {"+', '.join(f'{x:04}' for x in self.stack)+"} (" +
+		# print("└ stack: {"+', '.join(f'{x:04}' for x in self.stack)+"} (" +
+		print("└ stack: {"+', '.join(f'{x:04}' if not isinstance(x, str) else x for x in \
+			formatlist_items(self.stack, 10))+"} (" +
 			  str(len(self.stack))+f' item{"s" if len(self.stack) != 1 else ""})')
 
 	def printResult(self):
@@ -355,6 +312,7 @@ class VM:
 			# print(self.output, end='')
 			print(self.output.strip('\n') if self.output !=
 				  "\n" else "\n", end='', flush=True)
+			if self.debug: print()
 		if self.debug:
 			print("")
 
@@ -381,6 +339,8 @@ class VM:
 			# return self.hashtable.find(value)
 
 		return arr
+
+	def sleep(self, time) -> None: sleep(time)
 
 	# @profile
 	def run(self):
@@ -440,11 +400,14 @@ class VM:
 				# print(funcid)
 				# print(getinstruct(funcid), self.bytes[self.ic+1])
 
-				self.output = eval('OP_'+self.getinstruct(funcid).name)(self)
+				# self.output = eval('OP_'+self.getinstruct(funcid).name)(self)
+				self.output = self.getinstruct(funcid).value.func(self)
 
 				if isinstance(self.output, list):
 					if self.output[0] == "sleep":
-						executeAfter = f"sleep({self.output[1]})"
+						# executeAfter = f"sleep({self.output[1]})"
+						executeAfter = self.sleep
+						executeAfterArgs = [self.output[1]]
 					self.output = None
 
 				self.ic += 1
@@ -454,9 +417,11 @@ class VM:
 				self.printResult()
 				self.poll()
 				if executeAfter:
-					eval(executeAfter)
+					# eval(executeAfter)
+					executeAfter(*executeAfterArgs)
 
 				lastop = self.getinstruct(funcid).name
+				# self.pgclock.tick(60)
 
 				# print('elapsed:',time()-t1)
 

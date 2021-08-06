@@ -1,8 +1,17 @@
+import os
+from pickle import NEWFALSE
 from bitsnbytes import Byte
 from enum import Enum
-from typing import List
+from typing import Callable, List
 
 from inspect import currentframe
+
+
+def formatlist_items(arr: list, lenght: int) -> list:
+    if len(arr) > lenght:
+        arr = arr[len(arr)-lenght:]
+        arr.insert(0,'...')
+    return arr
 
 def ln(offset=0): return currentframe().f_back.f_lineno - offset
 
@@ -27,6 +36,14 @@ def OP_LODA(self):
         arr = self.get_array(ptr)
         print('│ >>> loaded array',arr,'with pointer',ptr)
     self.a = ptr
+def OP_STSI(self):
+    self.a = len(self.stack)
+    if self.debug: print('│ >>> getting stack size')
+def OP_SWAP(self):
+    old_a = self.a
+    self.a = self.pop(doreturn=True)
+    self.push(value=old_a, doreturn=True)
+    if self.debug: print('│ >>> swapped register with stack top')
 
 def OP_ADD(self):
     self.pop()
@@ -173,6 +190,39 @@ def OP_INC(self):
 def OP_DEC(self):
     self.a -= 1 if self.a > 0 else 0
     if self.debug: print('│ >>> decrementing')
+
+def OP_NEWA(self):
+    key = len(self.ptr_pool) + 1
+    self.ptr_pool[key] = []
+    self.a = key
+    if self.debug: print('│ >>> created new array with pointer',key)
+def OP_PUSA(self):
+    self.ic += 1
+    val = self.get_constant(self.ip.to_int())
+    self.get_array(self.a).append(val)
+    if self.debug: print('│ >>> appended',val,'to array')
+def OP_POPA(self):
+    # self.ic += 1
+    val = self.get_array(self.a).pop()
+    self.stack.append(val)
+    if self.debug: print('│ >>> popped',val,'from array onto stack')
+def OP_SPLT(self):
+    olda = self.a
+    for item in self.get_array(self.a):
+        self.a = item
+        self.push()
+    self.a = olda
+    if self.debug: print('│ >>> split array',
+        formatlist_items(self.get_array(self.a), 10),'onto the stack')
+def OP_JOIN(self):
+    key = len(self.ptr_pool) + 1
+    self.a = key
+    arr = []
+    for item in self.stack:
+        arr.append(item)
+    self.ptr_pool[key] = arr
+    if self.debug: print('│ >>> joined stack as array')
+
 def OP_PUSB(self):
     self.ic += 1
     dest = int(self.get_constant(self.ip.to_int()))
@@ -238,6 +288,107 @@ def OP_DECV(self):
     if self.debug: print('│ >>> decrementing variable',varname)
     self.hashtable.replace(varname, self.hashtable.find(varname)-1)
 
+def OP_OPEF(self):
+    self.ic += 1
+    name = ''.join([chr(x) for x in self.get_array(self.get_constant(self.ip.to_int()))])
+    self.ic += 1
+
+    # nibble represents mode:
+    # 0b1111
+    #   │││└ binary=0 text=1
+    #   ││└ append
+    #   │└ write
+    #   └ read
+    
+    mode = self.get_constant(self.ip.to_int())
+    if mode < 0x0 or mode > 0xf:
+        # invalid mode
+        return("RuntimeError: invalid file mode "+str(bin(mode)))
+    bits = [int(x) for x in bin(mode)[2:]]
+    while len(bits) < 4:
+        bits.insert(0, 0)
+
+    if bits[:3] == [0,0,0]:
+        return("RuntimeError: invalid file mode 0b"+ ''.join([str(x) for x in bits]) +\
+             ' (at least read, write or append)')
+
+    modestr = str()
+    if bits[0]: # read
+        modestr = 'r'
+
+    if bits[1]: # write
+        if bits[0]: modestr = 'r+' # also read
+        else: modestr = 'w' # just write
+    
+    elif bits[2]: # append (skipped if already writing)
+        if bits[0]: modestr = 'a+' # also read
+        else: modestr = 'a' # just append
+    
+    if not bits[3]: # binary mode
+        modestr = modestr.replace('+', 'b+') if '+' in modestr else modestr + 'b'
+    
+    # opening n shit
+    try:
+        key = len(self.file_pool) + 1
+        self.file_pool[key] = open(self.translate_filename(name), modestr)
+        if self.debug: print('│ >>> opening file',name,'with mode',modestr,'with pointer',key)
+        self.a = key
+    except FileNotFoundError:
+        if self.debug: print('│ >>> failed to open file',name,'(file not found)')
+def OP_CLOF(self):
+    self.ic += 1
+    key = int(self.get_constant(self.ip.to_int()))
+    if key in self.file_pool:
+        self.file_pool[key].close()
+        self.file_pool.pop(key)
+        if self.debug: print('│ >>> closing file with pointer',key)
+    elif self.debug: print('│ >>> failed to close file with pointer',key,'(not in file pool)')
+def OP_SEKF(self):
+    self.ic += 1
+    key = int(self.get_constant(self.ip.to_int()))
+    self.ic += 1
+    pos = int(self.get_constant(self.ip.to_int()))
+    if key in self.file_pool:
+        self.file_pool[key].seek(pos)
+        if self.debug: print('│ >>> seeking to',pos,'in file with pointer',key)
+def OP_WRTF(self):
+    self.ic += 1
+    key = int(self.get_constant(self.ip.to_int()))
+    self.ic += 1
+    text = ''.join([chr(x) for x in self.get_array(self.get_constant(self.ip.to_int()))])
+    if key in self.file_pool and self.file_pool[key].writable():
+        self.file_pool[key].write(text)
+        if self.debug: print('│ >>> writing "'+text+'" to file with pointer',key)
+    elif self.debug: print('│ >>> failed to write to file with pointer',key)
+def OP_REAF(self):
+    self.ic += 1
+    key = int(self.get_constant(self.ip.to_int()))
+    self.ic += 1
+    length = int(self.get_constant(self.ip.to_int()))
+    if key in self.file_pool and self.file_pool[key].readable():
+        arg = [length] if length else [] 
+        text = self.file_pool[key].read(*arg)
+        textarr = [ord(char) if isinstance(char, str) else char for char in text]
+        # textarr.reverse()
+        ptr = len(self.ptr_pool) + 1
+        self.ptr_pool[ptr] = textarr
+        self.a = ptr
+        if self.debug: print('│ >>> reading from file with pointer',key,'to array with pointer',ptr)
+
+def OP_MAKF(self):
+    self.ic += 1
+    name = ''.join([chr(x) for x in self.get_array(self.get_constant(self.ip.to_int()))])
+    open(self.translate_filename(name), 'a').close()
+    if self.debug: print('│ >>> touched file',name)
+def OP_DELF(self):
+    self.ic += 1
+    name = ''.join([chr(x) for x in self.get_array(self.get_constant(self.ip.to_int()))])
+    os.remove(self.translate_filename(name))
+    if self.debug: print('│ >>> deleted file',name)
+
+def OP_CLST(self):
+    self.stack = []
+    if self.debug: print('│ >>> clearing stack')
 def OP_POLL(self):
     self.poll()
     if self.debug: print('│ >>> polling')
@@ -258,59 +409,73 @@ class Ins:#truction
         self.args = args
         self.argc = len(args)
         self.offset_sensitive = offset_sensitive
+        self.func: Callable = None
 
-sln = ln()+3
+sln = ln()+2
 class Instruct(Enum):
-    # @property
-    def l(self, offset):
-        return sln+offset
-
-    NOI     = Ins(l(-1),  False)
+    NOI     = Ins(ln(sln),  False)
     # stack
-    PUSH    = Ins(l(0),   False)
-    POP     = Ins(l(0),   False)
-    LOAD    = Ins(l(0),   False, float)
-    LODA    = Ins(l(0),   False, list)
+    PUSH    = Ins(ln(sln),  False)
+    POP     = Ins(ln(sln),  False)
+    LOAD    = Ins(ln(sln),  False, float)
+    LODA    = Ins(ln(sln),  False, list)
+    STSI    = Ins(ln(sln),  False)
+    SWAP    = Ins(ln(sln),  False)
     # arithmetic
-    ADD     = Ins(l(1),   False)
-    SUB     = Ins(l(1),   False)
-    MUL     = Ins(l(1),   False)
-    DIV     = Ins(l(1),   False)
-    NEG     = Ins(l(1),   False)
+    ADD     = Ins(ln(sln),  False)
+    SUB     = Ins(ln(sln),  False)
+    MUL     = Ins(ln(sln),  False)
+    DIV     = Ins(ln(sln),  False)
+    NEG     = Ins(ln(sln),  False)
     # io
-    INPT    = Ins(l(2),   False)
-    PRNT    = Ins(l(2),   False)
-    PRNC    = Ins(l(2),   False)
-    PRNS    = Ins(l(2),   False)
-    PRNA    = Ins(l(2),   False)
+    INPT    = Ins(ln(sln),  False)
+    PRNT    = Ins(ln(sln),  False)
+    PRNC    = Ins(ln(sln),  False)
+    PRNS    = Ins(ln(sln),  False)
+    PRNA    = Ins(ln(sln),  False)
     # control flow
-    CMP     = Ins(l(3),   False)
-    JMP     = Ins(l(3),   True,  int)
-    JMIF    = Ins(l(3),   True,  int)
-    JIFN    = Ins(l(3),   True,  int)
-    CALL    = Ins(l(3),   True,  int)
-    CAIF    = Ins(l(3),   True,  int)
-    CIFN    = Ins(l(3),   True,  int)
-    RET     = Ins(l(3),   False)
+    CMP     = Ins(ln(sln),  False)
+    JMP     = Ins(ln(sln),  True,  int)
+    JMIF    = Ins(ln(sln),  True,  int)
+    JIFN    = Ins(ln(sln),  True,  int)
+    CALL    = Ins(ln(sln),  True,  int)
+    CAIF    = Ins(ln(sln),  True,  int)
+    CIFN    = Ins(ln(sln),  True,  int)
+    RET     = Ins(ln(sln),  False)
     # register manipulation
-    INC     = Ins(l(4),   False)
-    DEC     = Ins(l(4),   False)
+    INC     = Ins(ln(sln),  False)
+    DEC     = Ins(ln(sln),  False)
+    # array
+    NEWA    = Ins(ln(sln),  False)
+    PUSA    = Ins(ln(sln),  False, int)
+    POPA    = Ins(ln(sln),  False)
+    SPLT    = Ins(ln(sln),  False)
+    JOIN    = Ins(ln(sln),  False)
     # byte manipulation
-    PUSB    = Ins(l(5),   True,  int)
-    GETB    = Ins(l(5),   True,  int)
+    PUSB    = Ins(ln(sln),  True,  int)
+    GETB    = Ins(ln(sln),  True,  int)
     # variable
-    NVAR    = Ins(l(6),   False, id)
-    DVAR    = Ins(l(6),   False, id)
-    PUVA    = Ins(l(6),   False, id)
-    LOVA    = Ins(l(6),   False, id)
-    INCV    = Ins(l(6),   False, id)
-    DECV    = Ins(l(6),   False, id)
+    NVAR    = Ins(ln(sln),  False, id)
+    DVAR    = Ins(ln(sln),  False, id)
+    PUVA    = Ins(ln(sln),  False, id)
+    LOVA    = Ins(ln(sln),  False, id)
+    INCV    = Ins(ln(sln),  False, id)
+    DECV    = Ins(ln(sln),  False, id)
     # file io
-    OPEF    = Ins(l(7))
+    OPEF    = Ins(ln(sln),  False, str, int)
+    CLOF    = Ins(ln(sln),  False, int)
+    SEKF    = Ins(ln(sln),  False, int, int)
+    WRTF    = Ins(ln(sln),  False, int, str)
+    REAF    = Ins(ln(sln),  False, int, int)
+    MAKF    = Ins(ln(sln),  False, str)
+    DELF    = Ins(ln(sln),  False, str)
+    #RENF    = Ins(ln(sln),  False, int, str)
+    #GFID    = Ins(ln(sln),  False, str, int)
     # misc.
-    WAIT    = Ins(l(9),   False, float)
-    POLL    = Ins(l(9),   False)
-    KILL    = Ins(l(9),   False)
+    CLST    = Ins(ln(sln),  False)
+    WAIT    = Ins(ln(sln),  False, float)
+    POLL    = Ins(ln(sln),  False)
+    KILL    = Ins(ln(sln),  False)
 
 def getinstruct(byteval: int):
     for instruct in Instruct:
@@ -318,4 +483,8 @@ def getinstruct(byteval: int):
             return instruct
     return False
 
+for op in Instruct:
+    if 'OP_'+op.name not in locals():
+        raise NotImplementedError(op.name)
+    op.value.func = eval('OP_'+op.name)
 # print('\n'.join([op.name +' '+str(op.value.byte.to_int()) for op in Instruct]))

@@ -181,10 +181,7 @@ class Compiler:
             self.bytecode = []
             
             # if returninstructs: instructs = []
-            lines = self.code.replace('\\n', 'FAKENEWLINEHERE')\
-                .replace('\\', '\n')\
-                .replace('FAKENEWLINEHERE', '\\n')\
-                .split('\n') if not lines else lines
+            lines = self.code.split('\n') if not lines else lines
             
             for line in lines:
                 
@@ -387,11 +384,17 @@ class Compiler:
         # convert to 8bit
         for i in range(len(eightbit_list)):
 
-            nr = int_to_bits(eightbit_list[i][0] * 7 / 255, length=3)
-            ng = int_to_bits(eightbit_list[i][1] * 7 / 255, length=3)
-            nb = int_to_bits(eightbit_list[i][2] * 3 / 255, length=2)
+            # nr = int_to_bits((eightbit_list[i][0] * 6 / 256) * 36, length=3)
+            # ng = int_to_bits((eightbit_list[i][1] * 6 / 256) * 6, length=3)
+            # nb = int_to_bits(eightbit_list[i][2] * 3 / 255, length=2)
 
-            newval = bits_to_int(nr + ng + nb)
+            # newval = bits_to_int(nr + ng + nb)
+            
+            r = int_to_bits(int((eightbit_list[i][0] * 8) / 256), length=3)
+            g = int_to_bits(int((eightbit_list[i][1] * 8) / 256), length=3)
+            b = int_to_bits(int((eightbit_list[i][2] * 4) / 256), length=2)
+
+            newval = bits_to_int(r + g + b)
             eightbit_list[i] = newval
         
         # insert with and height in begin (only one byte cuz max dimensions are 128x128 anyway)
@@ -399,6 +402,7 @@ class Compiler:
         eightbit_list.insert(0, h)
         eightbit_list.insert(0, w)
 
+        eightbit_list.reverse() # ?
         bytearr = bytearray(eightbit_list)
         with open(output_file, 'wb') as f:
             f.write(bytearr)
